@@ -1,7 +1,7 @@
 --[[=================================================================
     M I D N I G H T   ·   M S C   (0x5A46 UI)
     -------------------------------------------------------------------
-    · Aba MSC: Foguete Infinito
+    · Aba MSC: Foguete Infinito + Coin Magnet
     · Customizacao e config que salva sozinho
 
     PROTECAO POR CHAVE VIA PANDA AUTH (PUSL-V4)
@@ -68,6 +68,14 @@ local CFG = {
     fogueteValor  = 100,     -- combustivel mantido
     fogueteFlag   = true,    -- liga tambem a flag UnlimitedFuel do jogo
     fogueteTaxa   = 0.2,     -- rede de seguranca (segundos)
+
+    ------------------------------------------------------------ coin magnet
+    magnetOn      = false,
+    magnetAltura  = 2,
+    magnetJitter  = 0.8,
+    magnetRaio    = 0,       -- 0 = mapa inteiro
+    magnetLote    = 60,      -- coins movidos por quadro
+    magnetRescan  = 1.0,     -- segundos entre buscas de salas novas
 
     ------------------------------------------------------------ painel
     BgImage        = "",
@@ -1395,8 +1403,157 @@ end
 --==================================================================
 -- [14] AUTO FARM  ·  motores
 --==================================================================
-local ligarFoguete
+local ligarFoguete, ligarMagnet
 local F = {}
+
+------------------------------------------------------------ COIN MAGNET
+-- Estrutura do jogo:
+--   Workspace.GeneratedMap.<City|Desert|Plains>_Room_<n>.Coins.CoinPoint
+-- O mapa e gerado, entao as salas surgem e somem: a lista e refeita
+-- de tempos em tempos em vez de ser guardada uma vez so.
+F.magnetInfo = "parado"
+
+local function myRoot()
+    local c = LP.Character
+    return c and (c:FindFirstChild("HumanoidRootPart") or c.PrimaryPart) or nil
+end
+
+-- puxa sempre pra onde VOCE esta (o jogo e de voo, nao tem carro)
+local function getPosAlvo()
+    local hrp = myRoot()
+    if hrp then return hrp.Position end
+    return nil
+end
+
+local function getMapa()
+    return workspace:FindFirstChild("GeneratedMap")
+        or workspace:FindFirstChild("GenereatedMap")
+        or workspace:FindFirstChild("Map")
+end
+
+local pastasCoins, ultimoScan = {}, 0
+local function escanearSalas()
+    pastasCoins = {}
+    local mapa = getMapa()
+    if not mapa then return 0 end
+    for _, sala in ipairs(mapa:GetChildren()) do
+        local coins = sala:FindFirstChild("Coins")
+        if coins then pastasCoins[#pastasCoins + 1] = { pasta = coins, sala = sala } end
+    end
+    return #pastasCoins
+end
+
+local function posDe(obj)
+    if not obj or not obj.Parent then return nil end
+    if obj:IsA("BasePart") then return obj.Position end
+    local ok, pivot = pcall(function() return obj:GetPivot() end)
+    if ok and pivot then return pivot.Position end
+    return nil
+end
+
+local function contarCoins()
+    local t = 0
+    for _, e in ipairs(pastasCoins) do
+        if e.pasta.Parent then t = t + #e.pasta:GetChildren() end
+    end
+    return t, #pastasCoins
+end
+
+local coinOriginal = {}
+local function prepararCoin(part)
+    if not part:IsA("BasePart") then return end
+    if coinOriginal[part] == nil then
+        coinOriginal[part] = { cf = part.CFrame, anc = part.Anchored, col = part.CanCollide }
+    end
+    part.Anchored = true
+    part.CanCollide = false
+end
+local function restaurarCoins()
+    local n = 0
+    for part, o in pairs(coinOriginal) do
+        if part and part.Parent then
+            pcall(function()
+                part.CFrame = o.cf
+                part.Anchored = o.anc
+                part.CanCollide = o.col
+            end)
+            n = n + 1
+        end
+    end
+    table.clear(coinOriginal)
+    return n
+end
+task.spawn(function()
+    while true do
+        task.wait(5)
+        for part in pairs(coinOriginal) do
+            if not part.Parent then coinOriginal[part] = nil end
+        end
+    end
+end)
+
+local magnetConn, magnetFrame = nil, 0
+ligarMagnet = function()
+    if magnetConn then return end
+    escanearSalas()
+    ultimoScan = tick()
+    magnetConn = RunService.Heartbeat:Connect(function()
+        if not CFG.magnetOn then return end
+        local pos = getPosAlvo()
+        if not pos then F.magnetInfo = "sem personagem" return end
+        if not getMapa() then F.magnetInfo = "GeneratedMap nao encontrado" return end
+
+        if tick() - ultimoScan > math.max(CFG.magnetRescan, 0.2) then
+            ultimoScan = tick()
+            escanearSalas()
+        end
+
+        -- balanco: sobe e desce a cada quadro pro toque repetir
+        magnetFrame = magnetFrame + 1
+        local off = (magnetFrame % 2 == 0) and CFG.magnetJitter or -CFG.magnetJitter
+        local destino = CFrame.new(pos + Vector3.new(0, CFG.magnetAltura + off, 0))
+
+        local movidos, salas = 0, 0
+        for _, e in ipairs(pastasCoins) do
+            if e.pasta.Parent then
+                local dentro = true
+                if CFG.magnetRaio > 0 then
+                    local sp = posDe(e.sala)
+                    dentro = sp and (sp - pos).Magnitude <= CFG.magnetRaio
+                end
+                if dentro then
+                    local usou = false
+                    for _, coin in ipairs(e.pasta:GetChildren()) do
+                        if movidos >= CFG.magnetLote then break end
+                        if coin:IsA("BasePart") then
+                            prepararCoin(coin)
+                            coin.CFrame = destino
+                            movidos = movidos + 1
+                            usou = true
+                        elseif coin:IsA("Model") then
+                            pcall(function()
+                                for _, p in ipairs(coin:GetDescendants()) do
+                                    if p:IsA("BasePart") then prepararCoin(p) end
+                                end
+                                coin:PivotTo(destino)
+                            end)
+                            movidos = movidos + 1
+                            usou = true
+                        end
+                    end
+                    if usou then salas = salas + 1 end
+                end
+            end
+            if movidos >= CFG.magnetLote then break end
+        end
+        F.magnetInfo = ("puxando %d coin(s) de %d sala(s)"):format(movidos, salas)
+    end)
+end
+local function desligarMagnet()
+    if magnetConn then magnetConn:Disconnect() magnetConn = nil end
+    restaurarCoins()
+    F.magnetInfo = "parado"
+end
 
 ------------------------------------------------------------ FOGUETE INFINITO
 -- O jogo guarda o combustivel em Character:GetAttribute("FireworkFuel")
@@ -1516,10 +1673,31 @@ do
     end })
     fg:Info("Ele devolve o tanque pro maximo no instante em que o jogo baixa o valor, entao o boost nunca e cortado por falta de combustivel.\n\nSe a barra encher mas o boost morrer mesmo assim, o servidor esta validando o combustivel e nao da pra forjar pelo cliente.", 108)
 
+    ------------------------------------------------------------ coin magnet
+    local mg = tabFarm:Section("Coin Magnet", "traz as moedas do mapa ate voce", 1)
+    mg:Toggle({ Name = "Ativar", Key = "magnetOn", BindId = "magnet",
+        Keybind = { Key = Enum.KeyCode.G }, Bell = true,
+        Callback = function(on)
+            if on then ligarMagnet() else desligarMagnet() end
+            notify("Coin Magnet", on and "puxando as moedas" or "desligado", 2.5)
+        end })
+    mg:Slider({ Name = "Altura", Key = "magnetAltura", Min = 0, Max = 8, Decimals = 1, Suffix = " studs" })
+    mg:Slider({ Name = "Balanco", Key = "magnetJitter", Min = 0.1, Max = 3, Decimals = 1 })
+    mg:Divider()
+    mg:Slider({ Name = "Raio (0 = mapa todo)", Key = "magnetRaio", Min = 0, Max = 3000, Suffix = "m" })
+    mg:Slider({ Name = "Coins por quadro", Key = "magnetLote", Min = 10, Max = 300 })
+    mg:Slider({ Name = "Rebuscar salas a cada", Key = "magnetRescan",
+        Min = 0.2, Max = 5, Decimals = 1, Suffix = "s" })
+    mg:Button({ Name = "Devolver os coins ao lugar", Callback = function()
+        local n = restaurarCoins()
+        notify("Coin Magnet", n .. " coin(s) devolvidos", 3)
+    end })
+    mg:Info("O mapa e gerado em salas (<b>City / Desert / Plains _Room_0..50</b>), cada uma com sua pasta <b>Coins</b>. Ele refaz a lista de tempos em tempos porque as salas surgem e somem conforme voce anda.\n\nSe pesar, baixe <b>Coins por quadro</b> ou use um <b>Raio</b> em vez do mapa inteiro.", 124)
+
     ------------------------------------------------------------ leitura ao vivo
     ------------------------------------------------------------ leitura ao vivo
     local est = tabFarm:Section("Como esta indo", nil, 2)
-    local painelF = est:Info("...", 92)
+    local painelF = est:Info("...", 124)
     local ultF = 0
     RunService.Heartbeat:Connect(function()
         if tick() - ultF < 0.5 then return end
@@ -1529,21 +1707,26 @@ do
         local fuel = char and char:GetAttribute("FireworkFuel")
         local glide = char and char:GetAttribute("IsGliding")
         local tipo = char and char:GetAttribute("CurrentFireworkType")
+        local totalCoins, nSalas = contarCoins()
         painelF.set((
             "combustivel   %s\n" ..
             "UnlimitedFuel %s\n" ..
             "foguete       %s\n" ..
             "planando      %s\n" ..
-            "%s"
+            "salas / coins %d  /  %d\n" ..
+            "foguete: %s\n" ..
+            "magnet:  %s"
         ):format(
             fuel ~= nil and tostring(fuel) or "sem o atributo",
             tostring(LP:GetAttribute("UnlimitedFuel")),
             (tipo ~= nil and tipo ~= "") and tostring(tipo) or "nenhum equipado",
             glide and "sim" or "nao",
-            F.fogueteInfo))
+            nSalas, totalCoins,
+            F.fogueteInfo, F.magnetInfo))
     end)
 
     local exp = tabFarm:Section("Como funciona", nil, 2)
+    exp:Info("<b>Coin Magnet</b> nao move voce: ele arrasta cada moeda ate o seu personagem, onde quer que voce esteja — no chao ou voando. A coleta e feita no cliente, entao o proprio jogo dispara ao ver a moeda encostar. O <b>balanco</b> sobe e desce a moeda a cada quadro — sem isso ela encosta uma vez so.", 108)
     exp:Info("O jogo guarda o combustivel em <b>Character.FireworkFuel</b> e tem uma flag propria, <b>UnlimitedFuel</b>, no player. A checagem que impede o boost roda no cliente, entao manter o tanque cheio faz ela nunca barrar.\n\nSe a barra encher mas o boost morrer mesmo assim, o servidor esta validando o combustivel — e ai nao da pra forjar pelo cliente.", 124)
 end
 
@@ -1602,6 +1785,7 @@ do
     local atalhos = tabCfg:Section("Teclas padrao", nil, 1)
     atalhos:Info(
         "<b>F</b>  foguete infinito\n" ..
+        "<b>G</b>  coin magnet\n" ..
         "<b>END</b>  esconder o painel\n" ..
         "<b>RightCtrl</b>  minimizar", 92)
 
@@ -1611,8 +1795,8 @@ do
         notify("Config", "salva em " .. CFG_FILE, 3)
     end })
     ctl:Button({ Name = "Desligar tudo", Callback = function()
-        CFG.foguete = false
-        desligarFoguete()
+        CFG.foguete, CFG.magnetOn = false, false
+        desligarFoguete() desligarMagnet()
         for _, fn in ipairs(Reg.refresh) do pcall(fn) end
         notify("Midnight", "tudo desligado", 3)
     end })
@@ -1623,7 +1807,7 @@ do
 
     local cre = tabCfg:Section("Creditos", nil, 2)
     cre:Info(
-        "MSC · Foguete Infinito: <b>Th.exe</b>\n" ..
+        "MSC (foguete + magnet): <b>Th.exe</b>\n" ..
         "Formato do painel: <b>0x5A46</b>\n\n" ..
         "Tudo roda no cliente, sem depender da biblioteca Drawing: funciona em qualquer executor.", 116)
 
@@ -1631,6 +1815,7 @@ do
     ajuda:Info(
         "· <b>Sem efeito:</b> veja no painel se o campo 'combustivel' mostra um numero. Se disser 'sem o atributo', esse jogo guarda o combustivel em outro lugar — use o botao de ver atributos.\n" ..
         "· <b>Enche mas o boost morre:</b> o servidor esta validando; nao tem como forjar pelo cliente.\n" ..
+        "· <b>Magnet sem efeito:</b> veja 'salas / coins' no painel. Se der 0, o mapa tem outro nome — os filhos do workspace aparecem no console.\n" ..
         "· Imagem por URL precisa de writefile + getcustomasset no executor.", 116)
 end
 
@@ -1877,6 +2062,7 @@ local function loadCfg()
     for _, fn in ipairs(Reg.refresh) do pcall(fn) end
     -- religa o que estava ligado
     if CFG.foguete   then pcall(ligarFoguete) end
+    if CFG.magnetOn  then pcall(ligarMagnet) end
     if CFG.BgImage and CFG.BgImage ~= "" then pcall(setBgImage, CFG.BgImage) end
     return true
 end
