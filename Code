@@ -1,7 +1,7 @@
 --[[=================================================================
     M I D N I G H T   ·   M S C   (0x5A46 UI)
     -------------------------------------------------------------------
-    · Aba MSC: Foguete Infinito + Coin Magnet
+    · Aba MSC: Foguete Infinito + Coin Magnet\n    · Aba Visual: troca a aparencia do foguete
     · Customizacao e config que salva sozinho
 
     PROTECAO POR CHAVE VIA PANDA AUTH (PUSL-V4)
@@ -64,6 +64,11 @@ end)
 --==================================================================
 local CFG = {
     ------------------------------------------------------------ foguete infinito
+    ------------------------------------------------------------ visual
+    visualOn      = false,
+    visualTipo    = "Dog",   -- aparencia aplicada
+    visualManter  = true,    -- reaplica quando o jogo troca a ferramenta
+
     foguete       = false,
     fogueteValor  = 100,     -- combustivel mantido
     fogueteFlag   = true,    -- liga tambem a flag UnlimitedFuel do jogo
@@ -1403,7 +1408,7 @@ end
 --==================================================================
 -- [14] AUTO FARM  ·  motores
 --==================================================================
-local ligarFoguete, ligarMagnet
+local ligarFoguete, ligarMagnet, ligarVisual
 local F = {}
 
 ------------------------------------------------------------ COIN MAGNET
@@ -1555,6 +1560,118 @@ local function desligarMagnet()
     F.magnetInfo = "parado"
 end
 
+------------------------------------------------------------ FOGUETE VISUAL
+-- Troca so a APARENCIA do foguete na sua mao. So voce ve:
+-- objeto criado no cliente nao replica. Nao muda velocidade nenhuma.
+F.visualInfo = "parado"
+
+local function getFireWorks()
+    local a = RS:FindFirstChild("Assets")
+    return a and a:FindFirstChild("FireWorks")
+end
+
+local function listaFoguetes()
+    local out = {}
+    local fw = getFireWorks()
+    if not fw then return out end
+    for _, f in ipairs(fw:GetChildren()) do
+        if f:IsA("Tool") or f:IsA("Model") then out[#out+1] = f.Name end
+    end
+    table.sort(out)
+    return out
+end
+
+local visualOriginais = {}
+
+local function limparVisual(tool)
+    for _, v in ipairs(tool:GetChildren()) do
+        if v.Name == "MN_Visual" then v:Destroy() end
+    end
+    local g = visualOriginais[tool]
+    if g then
+        local h = tool:FindFirstChild("Handle")
+        if h then pcall(function() h.Transparency = g.transp end) end
+    end
+end
+
+local function aplicarVisual(nome)
+    local char = LP.Character
+    if not char then F.visualInfo = "sem personagem" return false end
+    local tool = char:FindFirstChild("EquippedFirework")
+    if not tool then F.visualInfo = "equipe o foguete primeiro" return false end
+    local fw = getFireWorks()
+    local modelo = fw and fw:FindFirstChild(nome)
+    if not modelo then F.visualInfo = "nao achei " .. tostring(nome) return false end
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then F.visualInfo = "ferramenta sem Handle" return false end
+
+    if visualOriginais[tool] == nil then
+        visualOriginais[tool] = { transp = handle.Transparency }
+    end
+    limparVisual(tool)
+
+    local ok = pcall(function()
+        local novo = modelo:Clone()
+        novo.Name = "MN_Visual"
+        for _, v in ipairs(novo:GetDescendants()) do
+            if v:IsA("BaseScript") then v:Destroy() end
+        end
+        local nh = novo:FindFirstChild("Handle")
+        if not nh then novo:Destroy() error("modelo sem Handle") end
+        handle.Transparency = 1
+        local base = nh.CFrame
+        for _, p in ipairs(novo:GetDescendants()) do
+            if p:IsA("BasePart") then
+                p.CanCollide = false
+                p.Massless = true
+                p.Anchored = false
+                p.CFrame = handle.CFrame * base:ToObjectSpace(p.CFrame)
+                local w = Instance.new("WeldConstraint")
+                w.Part0 = handle
+                w.Part1 = p
+                w.Parent = p
+            end
+        end
+        nh.CFrame = handle.CFrame
+        novo.Parent = tool
+    end)
+
+    if ok then
+        F.visualInfo = "aparencia: " .. nome
+        return true
+    end
+    F.visualInfo = "falhou ao aplicar " .. nome
+    return false
+end
+
+local function tirarVisual()
+    local char = LP.Character
+    local tool = char and char:FindFirstChild("EquippedFirework")
+    if tool then limparVisual(tool) end
+    table.clear(visualOriginais)
+    F.visualInfo = "parado"
+end
+
+ligarVisual = function()
+    aplicarVisual(CFG.visualTipo)
+end
+
+-- reaplica quando o jogo troca a ferramenta (decolagem, respawn)
+task.spawn(function()
+    local ultima = nil
+    while true do
+        task.wait(0.5)
+        if CFG.visualOn and CFG.visualManter then
+            local char = LP.Character
+            local tool = char and char:FindFirstChild("EquippedFirework")
+            if tool and (tool ~= ultima or not tool:FindFirstChild("MN_Visual")) then
+                ultima = tool
+                aplicarVisual(CFG.visualTipo)
+            end
+        end
+    end
+end)
+
 ------------------------------------------------------------ FOGUETE INFINITO
 -- O jogo guarda o combustivel em Character:GetAttribute("FireworkFuel")
 -- e tem uma flag propria em LocalPlayer:GetAttribute("UnlimitedFuel").
@@ -1695,7 +1812,6 @@ do
     mg:Info("O mapa e gerado em salas (<b>City / Desert / Plains _Room_0..50</b>), cada uma com sua pasta <b>Coins</b>. Ele refaz a lista de tempos em tempos porque as salas surgem e somem conforme voce anda.\n\nSe pesar, baixe <b>Coins por quadro</b> ou use um <b>Raio</b> em vez do mapa inteiro.", 124)
 
     ------------------------------------------------------------ leitura ao vivo
-    ------------------------------------------------------------ leitura ao vivo
     local est = tabFarm:Section("Como esta indo", nil, 2)
     local painelF = est:Info("...", 124)
     local ultF = 0
@@ -1728,6 +1844,89 @@ do
     local exp = tabFarm:Section("Como funciona", nil, 2)
     exp:Info("<b>Coin Magnet</b> nao move voce: ele arrasta cada moeda ate o seu personagem, onde quer que voce esteja — no chao ou voando. A coleta e feita no cliente, entao o proprio jogo dispara ao ver a moeda encostar. O <b>balanco</b> sobe e desce a moeda a cada quadro — sem isso ela encosta uma vez so.", 108)
     exp:Info("O jogo guarda o combustivel em <b>Character.FireworkFuel</b> e tem uma flag propria, <b>UnlimitedFuel</b>, no player. A checagem que impede o boost roda no cliente, entao manter o tanque cheio faz ela nunca barrar.\n\nSe a barra encher mas o boost morrer mesmo assim, o servidor esta validando o combustivel — e ai nao da pra forjar pelo cliente.", 124)
+end
+
+--------------------------------------------------------------- ABA: VISUAL
+local tabVisual = Win:Tab("Visual", "◈")
+do
+    local nomes = listaFoguetes()
+    if #nomes == 0 then nomes = { "Dog" } end
+
+    local vs = tabVisual:Section("Foguete Visual", "troca a aparencia na sua mao", 1)
+    vs:Toggle({ Name = "Ativar", Key = "visualOn", BindId = "visual",
+        Keybind = { Key = Enum.KeyCode.J }, Bell = true,
+        Callback = function(on)
+            if on then
+                aplicarVisual(CFG.visualTipo)
+                notify("Visual", "aparencia: " .. CFG.visualTipo, 2.5)
+            else
+                tirarVisual()
+                notify("Visual", "voltou ao original", 2.5)
+            end
+        end })
+
+    vs:Dropdown({ Name = "Qual foguete", Key = "visualTipo",
+        Items = nomes,
+        Callback = function(v)
+            if CFG.visualOn then aplicarVisual(v) end
+            notify("Visual", v, 2)
+        end })
+
+    vs:Checkbox({ Name = "Manter ao trocar de ferramenta", Key = "visualManter" })
+    vs:Button({ Name = "Reaplicar agora", Callback = function()
+        if aplicarVisual(CFG.visualTipo) then
+            notify("Visual", "reaplicado", 2)
+        else
+            notify("Visual", F.visualInfo, 3)
+        end
+    end })
+    vs:Button({ Name = "Voltar ao original", Callback = function()
+        CFG.visualOn = false
+        tirarVisual()
+        for _, fn in ipairs(Reg.refresh) do pcall(fn) end
+        notify("Visual", "aparencia original", 2.5)
+    end })
+
+    ------------------------------------------------------------ atalhos
+    local rap = tabVisual:Section("Atalhos", "os mais bonitos do jogo", 1)
+    for _, nome in ipairs({ "Dog", "Prismatic", "SuperNova", "BigBoom", "Golden", "ADMIN" }) do
+        rap:Button({ Name = nome, Callback = function()
+            CFG.visualTipo = nome
+            CFG.visualOn = true
+            aplicarVisual(nome)
+            for _, fn in ipairs(Reg.refresh) do pcall(fn) end
+            notify("Visual", nome .. " aplicado", 2.5)
+        end })
+    end
+
+    ------------------------------------------------------------ estado
+    local ve = tabVisual:Section("Estado", nil, 2)
+    local painelV = ve:Info("...", 92)
+    local ultV = 0
+    RunService.Heartbeat:Connect(function()
+        if tick() - ultV < 0.5 then return end
+        ultV = tick()
+        if not (Win.Active == tabVisual and Win.Main.Visible and not Win.Minimized) then return end
+        local char = LP.Character
+        local tool = char and char:FindFirstChild("EquippedFirework")
+        local temVisual = tool and tool:FindFirstChild("MN_Visual") ~= nil
+        painelV.set((
+            "foguete real   %s\n" ..
+            "aparencia      %s\n" ..
+            "equipado       %s\n" ..
+            "aplicado       %s\n" ..
+            "%s"
+        ):format(
+            char and tostring(char:GetAttribute("CurrentFireworkType")) or "-",
+            CFG.visualTipo,
+            tool and "sim" or "nao - equipe o foguete",
+            temVisual and "sim" or "nao",
+            F.visualInfo))
+    end)
+
+    local vex = tabVisual:Section("Como funciona", nil, 2)
+    vex:Info("Ele deixa o cabo original invisivel e solda o modelo escolhido por cima, com WeldConstraint — assim acompanha a animacao da mao certinho.\n\n<b>So voce ve.</b> Objeto criado no cliente nao replica pros outros jogadores, e a velocidade continua a do seu foguete de verdade. E enfeite.", 124)
+    vex:Info("O jogo troca a ferramenta ao decolar e ao renascer. Por isso existe o <b>Manter</b>: sem ele a aparencia sumiria a cada voo.", 74)
 end
 
 --------------------------------------------------------------- ABA: CUSTOMIZE
@@ -1786,6 +1985,7 @@ do
     atalhos:Info(
         "<b>F</b>  foguete infinito\n" ..
         "<b>G</b>  coin magnet\n" ..
+        "<b>J</b>  foguete visual\n" ..
         "<b>END</b>  esconder o painel\n" ..
         "<b>RightCtrl</b>  minimizar", 92)
 
@@ -1795,8 +1995,8 @@ do
         notify("Config", "salva em " .. CFG_FILE, 3)
     end })
     ctl:Button({ Name = "Desligar tudo", Callback = function()
-        CFG.foguete, CFG.magnetOn = false, false
-        desligarFoguete() desligarMagnet()
+        CFG.foguete, CFG.magnetOn, CFG.visualOn = false, false, false
+        desligarFoguete() desligarMagnet() tirarVisual()
         for _, fn in ipairs(Reg.refresh) do pcall(fn) end
         notify("Midnight", "tudo desligado", 3)
     end })
@@ -1807,7 +2007,7 @@ do
 
     local cre = tabCfg:Section("Creditos", nil, 2)
     cre:Info(
-        "MSC (foguete + magnet): <b>Th.exe</b>\n" ..
+        "MSC + Visual: <b>Th.exe</b>\n" ..
         "Formato do painel: <b>0x5A46</b>\n\n" ..
         "Tudo roda no cliente, sem depender da biblioteca Drawing: funciona em qualquer executor.", 116)
 
@@ -2063,6 +2263,7 @@ local function loadCfg()
     -- religa o que estava ligado
     if CFG.foguete   then pcall(ligarFoguete) end
     if CFG.magnetOn  then pcall(ligarMagnet) end
+    if CFG.visualOn  then pcall(ligarVisual) end
     if CFG.BgImage and CFG.BgImage ~= "" then pcall(setBgImage, CFG.BgImage) end
     return true
 end
