@@ -1,23 +1,12 @@
 --[[=================================================================
     M I D N I G H T   ·   M S C   (0x5A46 UI)
     -------------------------------------------------------------------
-    · Aba MSC: Foguete Infinito + Coin Magnet\n    · Aba Visual: troca a aparencia do foguete
+    · Aba MSC: Foguete Infinito + Coin Magnet
+    · Aba Visual: troca a aparencia do foguete
     · Customizacao e config que salva sozinho
 
-    PROTECAO POR CHAVE VIA PANDA AUTH (PUSL-V4)
+    PROTECAO POR CHAVE REMOVIDA - ACESSO DIRETO
 ===================================================================]]
-
---==================================================================
--- [0] PANDA AUTH
---==================================================================
-local PUSL = loadstring(game:HttpGet("https://secure.pandauth.com/pv4/lib"))()
-if not PUSL or type(PUSL.configure) ~= "function" then
-    warn("[Panda] Biblioteca nao carregou.")
-    return
-end
-PUSL.configure({ serviceId = "me5930900gmailcom" })
-local GETKEY_URL = PUSL.getKeyUrl() or "https://dash.pandauth.com/getkey/me5930900gmailcom"
-local AccessGranted = false
 
 --==================================================================
 -- [1] SERVICOS
@@ -515,7 +504,7 @@ function Zero.new(config)
     UserInputService.InputBegan:Connect(function(input, processed)
         if Listening then return end
         if processed then return end
-        if not AccessGranted then return end
+        -- AccessGranted removido, não há checagem de acesso
         if input.KeyCode == self.ToggleKey then self:ToggleMinimize() return end
         if input.KeyCode == self.HideKey then
             self.Main.Visible = not self.Main.Visible
@@ -2269,170 +2258,14 @@ local function loadCfg()
 end
 
 --==================================================================
--- [18] LOGIN
+-- INICIALIZACAO DIRETA (SEM LOGIN)
 --==================================================================
-local loginGui = new("ScreenGui", {
-    Name = "MN_Login", ResetOnSpawn = false, IgnoreGuiInset = true,
-    DisplayOrder = 1000, Parent = GUIPARENT,
-})
-local blur = Instance.new("BlurEffect")
-blur.Size = 16
-blur.Parent = Camera
-new("Frame", {
-    Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0,0,0),
-    BackgroundTransparency = 0.45, BorderSizePixel = 0, Parent = loginGui,
-})
-local lf = new("Frame", {
-    AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(380, 340), BackgroundColor3 = Theme.Window,
-    BorderSizePixel = 0, Parent = loginGui,
-})
-corner(16, lf)
-stroke(Theme.Accent, lf, 1.5, 0.25)
-local logo = new("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 40), Position = UDim2.fromOffset(0, 36),
-    BackgroundTransparency = 1, Font = Enum.Font.GothamBlack, Text = "🌙  MIDNIGHT",
-    TextSize = 24, TextColor3 = Theme.Text, Parent = lf,
-})
-new("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 18), Position = UDim2.fromOffset(0, 78),
-    BackgroundTransparency = 1, Font = Enum.Font.GothamBold,
-    Text = "MSC  ·  0x5A46 UI", TextSize = 12,
-    TextColor3 = Theme.Accent, Parent = lf,
-})
-local keyBox = new("TextBox", {
-    AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 126),
-    Size = UDim2.fromOffset(320, 44), Text = "", PlaceholderText = "Digite sua chave",
-    PlaceholderColor3 = Theme.Dim, ClearTextOnFocus = false, Font = Enum.Font.GothamMedium,
-    TextSize = 14, TextColor3 = Theme.Text, BackgroundColor3 = Theme.Field,
-    BorderSizePixel = 0, Parent = lf,
-})
-corner(10, keyBox)
-local ks = stroke(Theme.Line, keyBox, 1.5, 0)
-pad(keyBox, 0, 14, 0, 14)
-keyBox.Focused:Connect(function() tween(ks, { Color = Theme.Accent }) end)
-keyBox.FocusLost:Connect(function() tween(ks, { Color = Theme.Line }) end)
-
-local enterBtn = new("TextButton", {
-    AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 182),
-    Size = UDim2.fromOffset(320, 44), Text = "ENTRAR", Font = Enum.Font.GothamBold,
-    TextSize = 15, TextColor3 = Theme.KnobOn, AutoButtonColor = false,
-    BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = lf,
-})
-corner(10, enterBtn)
-enterBtn.MouseEnter:Connect(function() tween(enterBtn, { BackgroundColor3 = lighten(Theme.Accent, 0.2) }) end)
-enterBtn.MouseLeave:Connect(function() tween(enterBtn, { BackgroundColor3 = Theme.Accent }) end)
-
-local getKeyBtn = new("TextButton", {
-    AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 236),
-    Size = UDim2.fromOffset(320, 32), Text = "🔑  Obter Chave", Font = Enum.Font.GothamMedium,
-    TextSize = 13, TextColor3 = Theme.SubText, AutoButtonColor = false,
-    BackgroundColor3 = Theme.Field, BackgroundTransparency = 0.5,
-    BorderSizePixel = 0, Parent = lf,
-})
-corner(10, getKeyBtn)
-stroke(Theme.Stroke, getKeyBtn, 1, 0.3)
-getKeyBtn.MouseEnter:Connect(function()
-    tween(getKeyBtn, { BackgroundTransparency = 0.2, TextColor3 = Theme.Text })
-end)
-getKeyBtn.MouseLeave:Connect(function()
-    tween(getKeyBtn, { BackgroundTransparency = 0.5, TextColor3 = Theme.SubText })
-end)
-getKeyBtn.MouseButton1Click:Connect(function()
-    local sucesso = false
-    pcall(function()
-        game:GetService("GuiService"):SetClipboard(GETKEY_URL)
-        sucesso = true
-    end)
-    if not sucesso and type(setclipboard) == "function" then
-        pcall(function() setclipboard(GETKEY_URL) sucesso = true end)
-    end
-    if sucesso then
-        notify("Link copiado", "Cole no navegador para pegar sua chave.", 4)
-    else
-        notify("Link para chave", "Copie manualmente: " .. GETKEY_URL, 8)
-    end
-end)
-
-local statusLbl = new("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 22), Position = UDim2.new(0, 0, 1, -34),
-    BackgroundTransparency = 1, Text = "", Font = Enum.Font.GothamBold,
-    TextSize = 12, TextColor3 = Theme.Bad, Parent = lf,
-})
-
-do
-    local dragging, startPos, startInput = false, nil, nil
-    logo.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging, startPos, startInput = true, lf.Position, input.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if not dragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local delta = input.Position - startInput
-            lf.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
-                                    startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-end
-
-local loggingIn = false
-local function doLogin()
-    if loggingIn then return end
-    local key = string.gsub(keyBox.Text, "%s+", "")
-    if key == "" then
-        statusLbl.TextColor3 = Theme.Bad
-        statusLbl.Text = "Digite uma chave"
-        return
-    end
-    loggingIn = true
-    statusLbl.TextColor3 = Theme.SubText
-    statusLbl.Text = "Validando..."
-    enterBtn.Text = "VALIDANDO..."
-    tween(enterBtn, { BackgroundColor3 = Theme.Dim }, SMOOTH)
-    local result = PUSL.validate(key)
-    if result and result.success then
-        AccessGranted = true
-        statusLbl.TextColor3 = Theme.Good
-        statusLbl.Text = "Acesso concedido"
-        enterBtn.Text = "CARREGANDO..."
-        tween(enterBtn, { BackgroundColor3 = Theme.Good }, SMOOTH)
-        task.delay(0.55, function()
-            tween(blur, { Size = 0 }, SMOOTH)
-            tween(lf, { BackgroundTransparency = 1 }, SMOOTH)
-            task.wait(0.35)
-            pcall(function() blur:Destroy() end)
-            pcall(function() loginGui:Destroy() end)
-            Win.Main.Visible = true
-            Win.Main.Size = UDim2.fromOffset(Win.Size.X, 48)
-            tween(Win.Main, { Size = UDim2.fromOffset(Win.Size.X, Win.Size.Y) }, SMOOTH)
-            local loaded = loadCfg()
-            task.wait(0.3)
-            notify("Midnight", loaded and "config carregada" or "painel pronto", 4)
-        end)
-    else
-        statusLbl.TextColor3 = Theme.Bad
-        statusLbl.Text = "Chave invalida ou expirada"
-        enterBtn.Text = "ENTRAR"
-        tween(enterBtn, { BackgroundColor3 = Theme.Accent }, SMOOTH)
-        notify("Chave invalida", "Obtenha uma chave em: " .. GETKEY_URL, 6)
-        local b = lf.Position
-        tween(lf, { Position = b + UDim2.fromOffset(-8, 0) }, TweenInfo.new(0.04))
-        task.wait(0.04)
-        tween(lf, { Position = b + UDim2.fromOffset(8, 0) }, TweenInfo.new(0.04))
-        task.wait(0.04)
-        tween(lf, { Position = b }, TweenInfo.new(0.06))
-    end
-    loggingIn = false
-end
-enterBtn.MouseButton1Click:Connect(doLogin)
-keyBox.FocusLost:Connect(function(enter) if enter then doLogin() end end)
+Win.Main.Visible = true
+Win.Main.Size = UDim2.fromOffset(Win.Size.X, 48)
+tween(Win.Main, { Size = UDim2.fromOffset(Win.Size.X, Win.Size.Y) }, SMOOTH)
+local loaded = loadCfg()
+task.wait(0.3)
+notify("Midnight", loaded and "config carregada" or "painel pronto", 4)
 
 --==================================================================
 -- limpeza ao sair
